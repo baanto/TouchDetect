@@ -5,6 +5,9 @@ using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using Baanto.ShadowSense.Services;
+using System.Windows.Threading;
+using Baanto.ShadowSense.Events;
+using Baanto.ShadowSense;
 
 namespace TouchDetection
 {
@@ -35,6 +38,15 @@ namespace TouchDetection
         // An integrated pen digitizer is used for input.
         private const int NID_INTEGRATED_PEN = 0x04;
 
+
+        private const int SKIP_TIME = 10;
+        private int skipCount = 0;
+
+        private DispatcherTimer timer = new DispatcherTimer();
+
+        //new instance of ShadowSense service
+        private ShadowSenseService ss = new ShadowSenseService();
+
         public MainWindow()
         {
             InitializeComponent();
@@ -43,17 +55,49 @@ namespace TouchDetection
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            timer.Interval = TimeSpan.FromMilliseconds(1000);
+            timer.Tick += new EventHandler(OnTimerTick);
+            timer.Start();
+        }
+
+        private void OnTimerTick(object o, EventArgs e)
+        {
+            //Open ShadowSense device
+            if (this.ss.ShadowSenseDevice == null)
+            {
+                if (this.ss.OpenDevice())
+                    this.ss.ShadowSenseDevice.Removed += Ss_Removed;
+            }
+
+            if (this.ss.ShadowSenseDevice != null &&
+                skipCount++ > SKIP_TIME)
+            {
+                this.ss.ShadowSenseDevice.Reboot();
+                this.skipCount = 0;
+            }
+
+            this.CheckDevices();
+        }
+
+        private void Ss_Removed(object sender, RemovedEvent e)
+        {
+            this.ss.ShadowSenseDevice.Removed -= Ss_Removed;
+            this.ss.ShadowSenseDevice.CloseDevice();
+            this.ss.ShadowSenseDevice = null;
+        }
+
+
+        private void CheckDevices()
+        {
             bool hasPen = false;
             bool hasTouch = false;
 
             //get windows input tablet devices
             var devices = GetTouchDevices();
 
-            //new instance of ShadowSense service
-            var ss = new ShadowSenseService();
 
             //find ShadowSense devices
-            var info =  ss.GetDeviceInfo().ToList();
+            var info = ss.GetDeviceInfo().ToList();
 
             StringBuilder sb = new StringBuilder();
 
@@ -100,7 +144,6 @@ namespace TouchDetection
 
             TB.Text = sb.ToString();
         }
-
         private int GetTouchDevices()
         {
             // Get a collection of the tablet devices for this window.  
